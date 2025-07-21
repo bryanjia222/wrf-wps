@@ -1,0 +1,36 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+
+# Data directories (mounted as volumes)
+WPS_GEOG/*
+data/*
+logs/*
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Build artifacts
+*.o
+*.mod
+*.exe

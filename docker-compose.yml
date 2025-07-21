@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  wrf-wps:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wrf-wps:latest
+    container_name: wrf-wps-container
+    hostname: wrf-node
+    
+    # Environment variables
+    environment:
+      - OMP_NUM_THREADS=20
+      - OMPI_ALLOW_RUN_AS_ROOT=1
+      - OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+      - WRF_EM_CORE=1
+      - WRF_NMM_CORE=0
+      - WRF_CHEM=0
+      - J=-j 20
+    
+    # Volumes for data persistence
+    volumes:
+      # WPS geographic data
+      - ./WPS_GEOG:/wrf/WPS_GEOG
+      # Input data (GFS, ERA5, etc.)
+      - ./data/input:/wrf/wrfdata/input
+      # Output data
+      - ./data/output:/wrf/wrfdata/output
+      # Configuration files
+      - ./config:/wrf/config
+      # Logs
+      - ./logs:/wrf/logs
+    
+    # Network settings
+    networks:
+      - wrf-network
+    
+    # Keep container running
+    stdin_open: true
+    tty: true
+    
+    # Working directory
+    working_dir: /wrf
+    
+    # Command to run
+    command: /bin/bash
+
+  # Optional: Visualization service
+  ncview:
+    image: ubuntu:20.04
+    container_name: wrf-ncview
+    environment:
+      - DISPLAY=${DISPLAY}
+      - DEBIAN_FRONTEND=noninteractive
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./data/output:/data
+    networks:
+      - wrf-network
+    command: >
+      bash -c "apt-get update && 
+               apt-get install -y ncview && 
+               ncview"
+    profiles:
+      - visualization
+
+networks:
+  wrf-network:
+    driver: bridge

@@ -1,0 +1,11 @@
+WPS_GEOG/*
+!WPS_GEOG/.gitkeep
+
+data/input/*
+!data/input/.gitkeep
+
+data/output/*
+!data/output/.gitkeep
+
+logs/*
+!logs/.gitkeep

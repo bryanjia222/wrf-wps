@@ -1,0 +1,173 @@
+# WRF + WPS Docker Container
+# Based on Ubuntu 20.04 LTS
+FROM ubuntu:20.04
+
+# Build arguments
+ARG COMPILE_THREADS=4
+ARG http_proxy
+ARG https_proxy
+
+# Set environment variables
+ENV WRF_VERSION=4.5.1
+ENV WPS_VERSION=4.5
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CC=gcc
+ENV CXX=g++
+ENV FC=gfortran
+ENV F77=gfortran
+
+# Set working directory
+WORKDIR /wrf
+
+# 安装 ca-certificates，避免换源时 SSL 验证失败
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates
+
+# 替换 APT 源为华为源
+RUN sed -i 's|http://.*.ubuntu.com|https://repo.huaweicloud.com|g' /etc/apt/sources.list && \
+    apt-get update
+
+# Update and install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gfortran \
+    gcc \
+    g++ \
+    libtool \
+    automake \
+    autoconf \
+    make \
+    m4 \
+    cmake \
+    default-jre \
+    default-jdk \
+    csh \
+    git \
+    ncl-ncarg \
+    wget \
+    tar \
+    libhdf5-dev \
+    libhdf5-serial-dev \
+    libpng-dev \
+    libnetcdf-dev \
+    libnetcdff-dev \
+    netcdf-bin \
+    libopenmpi-dev \
+    openmpi-bin \
+    grads \
+    curl \
+    vim \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install required libraries
+RUN apt-get update && apt-get install -y \
+    libnetcdf-c++4-dev \
+    libnetcdf-cxx-legacy-dev \
+    libfreetype6-dev \
+    libssl-dev \
+    libxmu-dev \
+    libxi-dev \
+    libcurl4-openssl-dev \
+    libgeos-dev \
+    libbz2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Jasper from source (required for GRIB2 support)
+RUN cd /tmp && \
+    wget https://github.com/jasper-software/jasper/archive/version-2.0.33.tar.gz && \
+    tar -xzf version-2.0.33.tar.gz && \
+    cd jasper-version-2.0.33 && \
+    mkdir -p build && cd build && \
+    cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j ${COMPILE_THREADS} && \
+    make install && \
+    cd / && rm -rf /tmp/jasper* && \
+    echo "/usr/local/lib" >> /etc/ld.so.conf.d/jasper.conf && \
+    ldconfig
+
+# Create directory structure
+RUN mkdir -p /wrf/WPS_GEOG /wrf/wrfdata /wrf/scripts
+
+# Fix HDF5 library paths
+RUN HDF5_LIB_DIR=$(find /usr/lib -name "libhdf5.so*" -type f | head -1 | xargs dirname) && \
+    echo "HDF5 libraries found in: $HDF5_LIB_DIR" && \
+    if [ -n "$HDF5_LIB_DIR" ]; then \
+        cd $HDF5_LIB_DIR && \
+        for lib in libhdf5_hl_fortran libhdf5_hl libhdf5_fortran libhdf5; do \
+            latest=$(ls -1 ${lib}.so* 2>/dev/null | sort -V | tail -1); \
+            if [ -n "$latest" ] && [ ! -f "${lib}.so" ]; then \
+                ln -sf "$(basename $latest)" "${lib}.so"; \
+            fi; \
+        done; \
+    fi && \
+    ldconfig
+
+# Set environment variables for WRF
+ENV DIR=/wrf
+ENV WRF_DIR=$DIR/WRF
+ENV WPS_DIR=$DIR/WPS
+ENV JASPERLIB=/usr/local/lib
+ENV JASPERINC=/usr/local/include
+ENV NETCDF=/usr
+ENV HDF5=/usr/lib/x86_64-linux-gnu/hdf5/serial
+ENV LDFLAGS="-L/usr/lib/x86_64-linux-gnu/hdf5/serial -L/usr/lib/x86_64-linux-gnu -L/usr/local/lib"
+ENV CPPFLAGS="-I/usr/include/hdf5/serial -I/usr/include -I/usr/local/include"
+ENV WRF_CHEM=0
+ENV WRF_KPP=0
+ENV FLEX_LIB_DIR=/usr/lib/x86_64-linux-gnu
+ENV YACC="/usr/bin/yacc -d"
+ENV NETCDF_C=/usr
+ENV NETCDF_FORTRAN=/usr
+ENV NETCDF_classic=1
+
+# Download and compile WRF
+RUN cd /wrf && \
+    wget https://github.com/wrf-model/WRF/releases/download/v${WRF_VERSION}/v${WRF_VERSION}.tar.gz && \
+    tar -xzf v${WRF_VERSION}.tar.gz && \
+    mv WRFV${WRF_VERSION} WRF && \
+    rm v${WRF_VERSION}.tar.gz
+
+# Configure and compile WRF
+RUN cd /wrf/WRF && \
+    echo "34" | ./configure && \
+    sed -i 's/^DM_FC.*/DM_FC = mpif90/' configure.wrf && \
+    sed -i 's/^DM_CC.*/DM_CC = mpicc/' configure.wrf && \
+    # Fix HDF5 library paths
+    sed -i 's/-lhdf5hl_fortran -lhdf5_hl -lhdf5_fortran -lhdf5/-lhdf5_hl_fortran -lhdf5_hl -lhdf5_fortran -lhdf5/g' configure.wrf && \
+    # Add library search paths
+    sed -i "s|^LDFLAGS.*=.*|LDFLAGS = -L/usr/lib/x86_64-linux-gnu/hdf5/serial -L/usr/lib/x86_64-linux-gnu|" configure.wrf && \
+    ./compile -j ${COMPILE_THREADS} em_real 2>&1 | tee compile_wrf.log
+
+# Download and compile WPS
+RUN cd /wrf && \
+    wget https://github.com/wrf-model/WPS/archive/v${WPS_VERSION}.tar.gz && \
+    tar -xzf v${WPS_VERSION}.tar.gz && \
+    mv WPS-${WPS_VERSION} WPS && \
+    rm v${WPS_VERSION}.tar.gz
+
+# Configure and compile WPS
+RUN cd /wrf/WPS && \
+    echo "3" | ./configure && \
+    sed -i "s|WRF_DIR.*=.*|WRF_DIR = ${WRF_DIR}|" configure.wps && \
+    sed -i "s|COMPRESSION_LIBS.*=.*|COMPRESSION_LIBS = -L${JASPERLIB} -ljasper -lpng -lz|" configure.wps && \
+    sed -i "s|COMPRESSION_INC.*=.*|COMPRESSION_INC = -I${JASPERINC}|" configure.wps && \
+    ./compile 2>&1 | tee compile_wps.log
+
+# Copy scripts
+COPY scripts/wrf_info.sh /wrf/scripts/
+COPY scripts/run.sh /wrf/scripts/
+RUN chmod +x /wrf/scripts/*.sh
+
+# Set up environment
+RUN echo "export PATH=$PATH:/wrf/scripts" >> /etc/bash.bashrc && \
+    echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib" >> /etc/bash.bashrc
+
+# Create data directories
+RUN mkdir -p /wrf/wrfdata/input /wrf/wrfdata/output
+
+# Set working directory
+WORKDIR /wrf
+
+# Default command
+CMD ["/bin/bash", "-c", "/wrf/scripts/wrf_info.sh && /bin/bash"]
