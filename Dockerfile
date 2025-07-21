@@ -1,6 +1,5 @@
 # WRF + WPS Docker Container
-# Based on Ubuntu 22.04 LTS
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Build arguments
 ARG COMPILE_THREADS=4
@@ -19,8 +18,7 @@ WORKDIR /wrf
 RUN apt-get update && \
     apt-get install -y ca-certificates
 
-# 替换 APT 源为华为源
-RUN sed -i 's|http://.*.ubuntu.com|https://repo.huaweicloud.com|g' /etc/apt/sources.list && \
+RUN sed -i "s@http://.*.ubuntu.com@http://mirrors.huaweicloud.com@g" /etc/apt/sources.list.d/ubuntu.sources && \
     apt-get update
 
 # Install only essential system packages
