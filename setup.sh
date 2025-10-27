@@ -47,24 +47,52 @@ fi
 echo -e "\n${GREEN}Setting script permissions...${NC}"
 chmod +x scripts/*.sh
 
-# Download geographic data (optional)
+# Download geographic data
 echo -e "\n${YELLOW}WPS Geographic Data${NC}"
+
+if [ ! -d "WPS_GEOG" ]; then
+    mkdir -p WPS_GEOG
+fi
+
 if [ -z "$(ls -A WPS_GEOG 2>/dev/null)" ]; then
     echo "WPS_GEOG directory is empty."
-    read -p "Download low-resolution geographic data (~250MB)? (y/n): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${GREEN}Downloading geographic data...${NC}"
+else
+    echo -e "${YELLOW}⚠ WPS_GEOG directory already contains files.${NC}"
+fi
+
+echo "Select geographic data resolution to download:"
+echo "  1) Low resolution (~150MB)"
+echo "  2) High resolution (~2.5GB)"
+echo "  n) Skip download"
+read -p "Enter your choice (1/2/n): " -n 1 -r
+echo
+
+case $REPLY in
+    1)
+        echo -e "${GREEN}Downloading low-resolution geographic data...${NC}"
         cd WPS_GEOG
         wget -c https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
         tar -xzf geog_low_res_mandatory.tar.gz
         rm -f geog_low_res_mandatory.tar.gz
         cd ..
-        echo -e "${GREEN}✓ Geographic data downloaded${NC}"
-    fi
-else
-    echo -e "${GREEN}✓ WPS_GEOG directory contains data${NC}"
-fi
+        echo -e "${GREEN}✓ Low-resolution geographic data downloaded${NC}"
+        ;;
+    2)
+        echo -e "${GREEN}Downloading high-resolution geographic data...${NC}"
+        cd WPS_GEOG
+        wget -c https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_high_res_mandatory.tar.gz
+        tar -xzf geog_high_res_mandatory.tar.gz
+        rm -f geog_high_res_mandatory.tar.gz
+        cd ..
+        echo -e "${GREEN}✓ High-resolution geographic data downloaded${NC}"
+        ;;
+    [Nn])
+        echo -e "${YELLOW}Skipped downloading geographic data.${NC}"
+        ;;
+    *)
+        echo -e "${RED}Invalid input. Skipped.${NC}"
+        ;;
+esac
 
 # Build Docker image
 echo -e "\n${YELLOW}Docker Build${NC}"
